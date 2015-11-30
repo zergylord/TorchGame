@@ -77,6 +77,7 @@ local function initialize()
 	ball_pos.h = tile_size[2]
 
     tile_list = torch.ones(num_tiles[1],num_tiles[2])
+    grow_time = torch.zeros(num_tiles[1],num_tiles[2])
 end
 local function get_tile_ind(rect)
     local x = rect.x+rect.w/2
@@ -102,6 +103,16 @@ end
 local function handle_ball_collide(rect)
     if collide(ball_pos,rect) then
         ball_dir:mul(-1)
+        --double the distance between objects: pos - diff
+        ball_pos.x = 2*ball_pos.x - rect.x
+        ball_pos.y = 2*ball_pos.y - rect.y
+    end
+end
+local function handle_agent_collide(rect)
+    if collide(agent_pos,rect) then
+        --double the distance between objects: pos - diff
+        agent_pos.x = 2*agent_pos.x - rect.x
+        agent_pos.y = 2*agent_pos.y - rect.y
     end
 end
 initialize()
@@ -127,18 +138,31 @@ tileset[3].x = graphics.bg_w/2+16
 tileset[3].y = 16*4
 tileset[3].w = 16
 tileset[3].h = 16
+--short grass
+tileset[4] = {}
+tileset[4].x = graphics.bg_w/2+16*2
+tileset[4].y = 0
+tileset[4].w = 16
+tileset[4].h = 16
+--tall grass
+tileset[5] = {}
+tileset[5].x = graphics.bg_w/2+16
+tileset[5].y = 0
+tileset[5].w = 16
+tileset[5].h = 16
 local pressed = {}
 local col_tiles = {}
+local heal_tiles = {}
 while running do
 	for e in SDL.pollEvent() do
 		if e.type == SDL.event.Quit then
 			running = false
 		elseif e.type == SDL.event.KeyDown then
-            print('down')
 			--print(string.format("key down: %d -> %s", e.keysym.sym, SDL.getKeyName(e.keysym.sym)))
             local key_name = SDL.getKeyName(e.keysym.sym)
             if  key_name == 'Space' and not pressed[e.keysym.sym] then
                 local rem_r,rem_c = get_tile_ind(agent_pos)
+                grow_time[rem_r][rem_c] = 0
                 if tile_list[rem_r][rem_c] == 1 then
                     tile_list[rem_r][rem_c] = 2
                     col_tiles[(rem_r-1)*tile_size[1]+ rem_c] = get_tile_rect(rem_r,rem_c)
@@ -146,6 +170,13 @@ while running do
                 else
                     tile_list[rem_r][rem_c] = 1
                     col_tiles[(rem_r-1)*tile_size[1]+rem_c] = nil
+                end
+            elseif key_name == 'P'and not pressed[e.keysym.sym] then
+                local rem_r,rem_c = get_tile_ind(agent_pos)
+                grow_time[rem_r][rem_c] = 0
+                if tile_list[rem_r][rem_c] == 1 then
+                    grow_time[rem_r][rem_c] = 1
+                    tile_list[rem_r][rem_c] = 4
                 end
             elseif key_name == 'W'and not pressed[e.keysym.sym] then
                 agent_dir[2] = agent_dir[2] -1
@@ -160,7 +191,6 @@ while running do
             end
             pressed[e.keysym.sym] = true
         elseif e.type == SDL.event.KeyUp then
-            print('up')
             local key_name = SDL.getKeyName(e.keysym.sym)
             if key_name == 'W' then
                 agent_dir[2] = agent_dir[2] +1
@@ -191,11 +221,23 @@ while running do
 
     ball_pos.x = ball_pos.x + ball_dir[1]
     ball_pos.y = ball_pos.y + ball_dir[2]
-    
+    --handle collisions----------------------------------- 
     for k,v in pairs(col_tiles) do
         handle_ball_collide(v)
+        handle_agent_collide(v)
     end
     handle_ball_collide(agent_pos)
+    local kill = {}
+    for k,v in pairs(heal_tiles) do
+        if collide(agent_pos,v.rect) then
+            print('healed!')
+            table.insert(kill,k)
+            tile_list[v.ind[1]][v.ind[2]] = 1
+        end
+    end
+    for i = 1,#kill do
+        table.remove(heal_tiles,kill[i])
+    end
 
     if ball_dir[1] > 0 and ball_pos.x > width - ball_pos.w then
         ball_dir[1] = -1
@@ -208,6 +250,21 @@ while running do
     elseif ball_dir[2] < 0 and ball_pos.y <= 0 then
         ball_dir[2] = 1
     end
-
+    local grow_mask = grow_time:gt(0)
+    grow_time[grow_mask] = grow_time[grow_mask] + 1
+    local fully_grown = grow_time:gt(500)
+    local num_grown = fully_grown:sum()
+    if num_grown  > 0 then
+        grow_time[fully_grown] = 0
+        tile_list[fully_grown] = 5
+        local inds = fully_grown:nonzero()
+        for i= 1,num_grown do
+            local struct = {}
+            struct.rect = get_tile_rect(inds[i][1],inds[i][2])
+            struct.ind = inds[i]
+            table.insert(heal_tiles,struct)
+            print(heal_tiles)
+        end
+    end
 	SDL.delay(0)
 end
