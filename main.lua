@@ -1,28 +1,15 @@
+require 'load_image' 
+require 'Ball'
 local SDL	= require "SDL"
 local image	= require "SDL.image"
+local agent = require 'agent'
 
 local running	= true
 local graphics	= { }
-local agent_pos	= { }
-local ball_pos	= { }
-local agent_dir	= torch.zeros(2)
-local ball_dir	= torch.ones(2)
 local width	= 640
 local height	= 480
 local num_tiles = {20,20}
 local tile_size = {width/num_tiles[1],height/num_tiles[2]}
-local function load_image(fn)
-	local img, ret = image.load(fn)
-	if not img then
-		error(err)
-	end
-
-	local tex, err = rdr:createTextureFromSurface(img)
-	if not tex then
-		error(err)
-	end
-    return tex
-end
 local function initialize()
 	local ret, err = SDL.init { SDL.flags.Video }
 	if not ret then
@@ -51,32 +38,25 @@ local function initialize()
 
 	-- Set to white for the bg
 	rdr:setDrawColor(0xFFFFFF)
-    local bg = load_image("pokeback.png")
-    local guy = load_image("scientist.png")
+    local bg = load_image("pokeback.png",rdr)
 
 	-- Store in global graphics
 	graphics.win	= win
 	graphics.rdr	= rdr
 	graphics.bg	= bg
-    graphics.agent = guy
 
 	-- Get the size of the bg
 	local f, a, w, h = bg:query()
     graphics.bg_w = w
     graphics.bg_h = h
 
+    agent.init(width / 2 - w / 2,
+               height / 2 - h / 2,
+               tile_size,
+               rdr)
+    graphics.agent = agent.sprite
 
-	agent_pos.x = width / 2 - w / 2
-	agent_pos.y = height / 2 - h / 2
-	agent_pos.w = tile_size[1]
-	agent_pos.h = tile_size[2]
-
-    agent_health = 1
-
-	ball_pos.x = 0
-	ball_pos.y = 0
-	ball_pos.w = tile_size[1]
-	ball_pos.h = tile_size[2]
+    ball = Ball(0,0,tile_size)
 
     tile_list = torch.ones(num_tiles[1],num_tiles[2])
     grow_time = torch.zeros(num_tiles[1],num_tiles[2])
@@ -101,23 +81,6 @@ local function collide(r1,r2)
         r1.x < r2.x + r2.w and
         r1.y + r1.h > r2.y and
         r1.y < r2.y + r2.h
-end
-local function handle_ball_collide(rect)
-    if collide(ball_pos,rect) then
-        ball_dir:mul(-1)
-        --double the distance between objects: pos - diff
-        ball_pos.x = 2*ball_pos.x - rect.x
-        ball_pos.y = 2*ball_pos.y - rect.y
-    end
-end
-local function handle_agent_collide(rect)
-    if collide(agent_pos,rect) then
-        --double the distance between objects: pos - diff
-        agent_pos.x = 2*agent_pos.x - rect.x
-        agent_pos.y = 2*agent_pos.y - rect.y
-        agent_health = agent_health - .1
-        print(agent_health)
-    end
 end
 initialize()
 local temp = {}
@@ -156,6 +119,7 @@ tileset[5].w = 16
 tileset[5].h = 16
 local pressed = {}
 local col_tiles = {}
+local col_objs = {ball,agent}
 local heal_tiles = {}
 while running do
 	for e in SDL.pollEvent() do
@@ -165,7 +129,7 @@ while running do
 			--print(string.format("key down: %d -> %s", e.keysym.sym, SDL.getKeyName(e.keysym.sym)))
             local key_name = SDL.getKeyName(e.keysym.sym)
             if  key_name == 'Space' and not pressed[e.keysym.sym] then
-                local rem_r,rem_c = get_tile_ind(agent_pos)
+                local rem_r,rem_c = get_tile_ind(agent.pos)
                 grow_time[rem_r][rem_c] = 0
                 if tile_list[rem_r][rem_c] == 1 then
                     tile_list[rem_r][rem_c] = 2
@@ -176,19 +140,19 @@ while running do
                     col_tiles[(rem_r-1)*tile_size[1]+rem_c] = nil
                 end
             elseif key_name == 'P'and not pressed[e.keysym.sym] then
-                local rem_r,rem_c = get_tile_ind(agent_pos)
+                local rem_r,rem_c = get_tile_ind(agent.pos)
                 if tile_list[rem_r][rem_c] == 1 then
                     grow_time[rem_r][rem_c] = 1
                     tile_list[rem_r][rem_c] = 4
                 end
             elseif key_name == 'W'and not pressed[e.keysym.sym] then
-                agent_dir[2] = agent_dir[2] -1
+                agent.dir[2] = agent.dir[2] -1
             elseif key_name == 'A'and not pressed[e.keysym.sym] then
-                agent_dir[1] = agent_dir[1] -1
+                agent.dir[1] = agent.dir[1] -1
             elseif key_name == 'S' and not pressed[e.keysym.sym] then
-                agent_dir[2] = agent_dir[2] + 1
+                agent.dir[2] = agent.dir[2] + 1
             elseif key_name == 'D' and not pressed[e.keysym.sym] then
-                agent_dir[1] = agent_dir[1] + 1
+                agent.dir[1] = agent.dir[1] + 1
             elseif key_name == 'Escape' and not pressed[e.keysym.sym] then
                 running = false
             end
@@ -196,13 +160,13 @@ while running do
         elseif e.type == SDL.event.KeyUp then
             local key_name = SDL.getKeyName(e.keysym.sym)
             if key_name == 'W' then
-                agent_dir[2] = agent_dir[2] +1
+                agent.dir[2] = agent.dir[2] +1
             elseif key_name == 'A' then
-                agent_dir[1] = agent_dir[1] +1
+                agent.dir[1] = agent.dir[1] +1
             elseif key_name == 'S' then
-                agent_dir[2] = agent_dir[2] - 1
+                agent.dir[2] = agent.dir[2] - 1
             elseif key_name == 'D'  then
-                agent_dir[1] = agent_dir[1] - 1
+                agent.dir[1] = agent.dir[1] - 1
             end
             pressed[e.keysym.sym] = false
 		end
@@ -215,27 +179,39 @@ while running do
             graphics.rdr:copy(graphics.bg,tileset[tile_list[r][c]], temp)
         end
     end
-    graphics.rdr:copy(graphics.bg, {x=16*22,y=16*10,w=16,h=16}, ball_pos)
-    graphics.rdr:copy(graphics.agent, {x=0,y=0,w=32,h=32}, agent_pos)
+    graphics.rdr:copy(graphics.bg, {x=16*22,y=16*10,w=16,h=16}, ball.pos)
+    graphics.rdr:copy(graphics.agent, {x=0,y=0,w=32,h=32}, agent.pos)
     graphics.rdr:present()
 
-    agent_pos.x = agent_pos.x + agent_dir[1]
-    agent_pos.y = agent_pos.y + agent_dir[2]
+    agent.pos.x = agent.pos.x + agent.dir[1]
+    agent.pos.y = agent.pos.y + agent.dir[2]
 
-    ball_pos.x = ball_pos.x + ball_dir[1]
-    ball_pos.y = ball_pos.y + ball_dir[2]
+    ball.pos.x = ball.pos.x + ball.dir[1]
+    ball.pos.y = ball.pos.y + ball.dir[2]
     --handle collisions----------------------------------- 
-    for k,v in pairs(col_tiles) do
-        handle_ball_collide(v)
-        handle_agent_collide(v)
+    --static/dynamic collisions
+    for _,tile in pairs(col_tiles) do
+        for _,obj in pairs(col_objs) do
+            if collide(tile,obj.pos) then
+                obj:handle_col({pos = tile,contact_damage = 0})
+            end
+        end
     end
-    handle_ball_collide(agent_pos)
+    --dynamic/dynamic collisions
+    for _,obj1 in pairs(col_objs) do
+        for _,obj2 in pairs(col_objs) do
+            if obj1 ~= obj2 and  collide(obj1.pos,obj2.pos) then
+                obj1:handle_col(obj2)
+                obj2:handle_col(obj1)
+            end
+        end
+    end
     local kill = {}
     for k,v in pairs(heal_tiles) do
-        if collide(agent_pos,v.rect) then
+        if collide(agent.pos,v.rect) then
             print('healed!')
-            agent_health = agent_health + .1
-            print(agent_health)
+            agent.hp = agent.hp + .1
+            print(agent.hp)
             table.insert(kill,k)
             tile_list[v.ind[1]][v.ind[2]] = 1
         end
@@ -244,16 +220,16 @@ while running do
         table.remove(heal_tiles,kill[i])
     end
 
-    if ball_dir[1] > 0 and ball_pos.x > width - ball_pos.w then
-        ball_dir[1] = -1
-    elseif ball_dir[1] < 0 and ball_pos.x <= 0 then
-        ball_dir[1] = 1
+    if ball.dir[1] > 0 and ball.pos.x > width - ball.pos.w then
+        ball.dir[1] = -1
+    elseif ball.dir[1] < 0 and ball.pos.x <= 0 then
+        ball.dir[1] = 1
     end
 
-    if ball_dir[2] > 0 and ball_pos.y > height - ball_pos.h then
-        ball_dir[2] = -1
-    elseif ball_dir[2] < 0 and ball_pos.y <= 0 then
-        ball_dir[2] = 1
+    if ball.dir[2] > 0 and ball.pos.y > height - ball.pos.h then
+        ball.dir[2] = -1
+    elseif ball.dir[2] < 0 and ball.pos.y <= 0 then
+        ball.dir[2] = 1
     end
     local grow_mask = grow_time:gt(0)
     grow_time[grow_mask] = grow_time[grow_mask] + 1
