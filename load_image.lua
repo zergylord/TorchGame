@@ -9,5 +9,5 @@ function load_image(fn,rdr)
 	if not tex then
 		error(err)
 	end
-    return tex
+    return tex,img
 end
