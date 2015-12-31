@@ -184,9 +184,33 @@ local pressed = {}
 local col_tiles = {}
 local heal_tiles = {}
 local function change_tile(tile_type,row,col)
+    tile_list[row][col] = tile_type
+    grow_time[row][col] = 0
+    if tile_type == 1 then
+        col_tiles[(row-1)*num_tiles[1]+ col] = nil
+    elseif tile_type == 4 then
+        grow_time[row][col] = 1
+    else
+        col_tiles[(row-1)*num_tiles[1]+ col] = get_tile_rect(row,col)
+    end
     
 end
+local function load_tilemap(map)
+    for x = 1,num_tiles[1] do
+        for y = 1,num_tiles[2] do
+            change_tile(map[x][y],x,y)
+        end
+    end
+end
+my_map = torch.ones(num_tiles[1],num_tiles[2])
+tile_mask = torch.rand(my_map:size()):gt(.85)
+my_map[tile_mask] = 2
+load_tilemap(my_map)
 while running do
+    --[[
+    local my_r,my_c = get_tile_ind(agent.pos)
+    print(my_r,my_c)
+    --]]
     timer:reset()
 	for e in SDL.pollEvent() do
 		if e.type == SDL.event.Quit then
@@ -199,18 +223,13 @@ while running do
                 grow_time[rem_r][rem_c] = 0
                 --if plain dirt, wall
                 if tile_list[rem_r][rem_c] == 1 then
-                    tile_list[rem_r][rem_c] = 2
-                    col_tiles[(rem_r-1)*tile_size[1]+ rem_c] = get_tile_rect(rem_r,rem_c)
+                    change_tile(2,rem_r,rem_c)
                 else --back to dirt
-                    tile_list[rem_r][rem_c] = 1
-                    col_tiles[(rem_r-1)*tile_size[1]+rem_c] = nil
+                    change_tile(1,rem_r,rem_c)
                 end
             elseif key_name == 'P'and not pressed[e.keysym.sym] then
                 local rem_r,rem_c = get_tile_ind(agent.pos)
-                if tile_list[rem_r][rem_c] == 1 then
-                    grow_time[rem_r][rem_c] = 1
-                    tile_list[rem_r][rem_c] = 4
-                end
+                change_tile(4,rem_r,rem_c)
             elseif key_name == 'W'and not pressed[e.keysym.sym] then
                 agent.dir[2] = agent.dir[2] -1
             elseif key_name == 'A'and not pressed[e.keysym.sym] then
@@ -267,6 +286,7 @@ while running do
     end
     --]]
     --handle collisions----------------------------------- 
+    local kill = {}
     for _,obj in pairs(col_objs) do
         --movement 
         obj:handle_movement(dt)
@@ -274,6 +294,13 @@ while running do
         for _,tile in pairs(col_tiles) do
             if collide(tile,obj.pos) then
                 obj:handle_col({pos = tile,contact_damage = 0})
+            end
+        end
+        for k,tile in pairs(heal_tiles) do
+            if collide(tile.rect,obj.pos) then
+                obj:handle_col({pos = tile.rect,contact_damage = -.1})
+                table.insert(kill,k)
+                tile_list[tile.ind[1] ][tile.ind[2] ] = 1
             end
         end
         --dynamic/dynamic collisions
@@ -286,23 +313,14 @@ while running do
         --boundary collisions
         obj:handle_bounds(width,height)
     end
-    --[[heal tile logic----------------
-    local kill = {}
-    for k,v in pairs(heal_tiles) do
-        if collide(agent.pos,v.rect) then
-            print('healed!')
-            agent.hp = agent.hp + .1
-            print(agent.hp)
-            table.insert(kill,k)
-            tile_list[v.ind[1] ][v.ind[2] ] = 1
-        end
-    end
+    --remove dead tiles
     for i = 1,#kill do
         table.remove(heal_tiles,kill[i])
     end
+    --heal tile logic----------------
     local grow_mask = grow_time:gt(0)
     grow_time[grow_mask] = grow_time[grow_mask] + 1
-    local fully_grown = grow_time:gt(500)
+    local fully_grown = grow_time:gt(50)
     local num_grown = fully_grown:sum()
     if num_grown  > 0 then
         grow_time[fully_grown] = 0
@@ -313,10 +331,8 @@ while running do
             struct.rect = get_tile_rect(inds[i][1],inds[i][2])
             struct.ind = inds[i]
             table.insert(heal_tiles,struct)
-            print(heal_tiles)
         end
     end
-    --]]
     local extra_time = (1/fps - timer:time().real)*1000
     if extra_time > 0 then
 	   SDL.delay(extra_time)
