@@ -1,6 +1,7 @@
 require 'load_image' 
 require 'Object'
 require 'Ball'
+require 'Bot'
 SDL	= require "SDL"
 image	= require "SDL.image"
 require 'Agent'
@@ -111,7 +112,7 @@ local function initialize()
         local f, a, w, h = bot.bg:query()
         bg_w = w
         bg_h = h
-        pokemon = Agent(width / 2 - bg_w / 2,
+        pokemon = Bot(width / 2 - bg_w / 2,
                    height / 2 - bg_h / 2,
                    tile_size,
                    'agent',
@@ -203,7 +204,7 @@ local function load_tilemap(map)
     end
 end
 my_map = torch.ones(num_tiles[1],num_tiles[2])
-tile_mask = torch.rand(my_map:size()):gt(.85)
+tile_mask = torch.rand(my_map:size()):gt(.95)
 my_map[tile_mask] = 2
 load_tilemap(my_map)
 while running do
@@ -273,7 +274,7 @@ while running do
         render(bot,pokemon.camera)
         --gnuplot.imagesc(pic)
         --gnuplot.plotflush()
-        --bot_model:forward(pic)
+        pokemon:forward(pic)
     end
     if has_human then
         render(disp,camera)
