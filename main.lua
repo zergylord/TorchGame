@@ -83,8 +83,8 @@ local function initialize()
         win_surf = win:getSurface()
         rdr, err = SDL.createSoftwareRenderer(win_surf, -1)
         --setup global disp
-        disp.bg = load_image("pokeback.png",rdr)
-        disp.agent = load_image("overworld.png",rdr)
+        disp.bg = load_image("res/pokeback.png",rdr)
+        disp.agent = load_image("res/overworld.png",rdr)
         disp.win	= win
         disp.rdr	= rdr
         -- Get the size of the bg
@@ -107,8 +107,8 @@ local function initialize()
             bot.surf = SDL.createRGBSurface(bot.w,bot.h) 
         end
         bot.rdr, err = SDL.createSoftwareRenderer(bot.surf, -1)
-        bot.agent = load_image("overworld.png",bot.rdr)
-        bot.bg = load_image("pokeback.png",bot.rdr)
+        bot.agent = load_image("res/overworld.png",bot.rdr)
+        bot.bg = load_image("res/pokeback.png",bot.rdr)
         local f, a, w, h = bot.bg:query()
         bg_w = w
         bg_h = h
