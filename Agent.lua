@@ -18,14 +18,21 @@ function Agent:handle_col(oo)
     self.pos.y = 2*self.pos.y - oo.pos.y
     self.hp = self.hp - oo.contact_damage
 end
+--used for normal movement. camera slowly tracking player
 function Agent:handle_movement(dt)
     parent.handle_movement(self,dt)
     alpha = .1
     self.camera.x = self.camera.x*(1-alpha) + alpha*(self.pos.x + self.pos.w/2- self.camera.w/2)
     self.camera.y = self.camera.y*(1-alpha) +alpha*(self.pos.y + self.pos.h/2- self.camera.h/2)
 end
+--teleport yourself plus camera
+function Agent:set_position(x,y)
+    parent.set_position(self,x,y)
+    self.camera.x = self.pos.x + self.pos.w/2- self.camera.w/2
+    self.camera.y = self.pos.y + self.pos.h/2- self.camera.h/2
+end
 function Agent:handle_bounds(width,height)
-    parent.handle_bounds(self,width,height)
+    local hit = parent.handle_bounds(self,width,height)
     if self.camera.x < 0 then
         self.camera.x = 0
     elseif self.camera.x > width - self.camera.w then
@@ -36,4 +43,5 @@ function Agent:handle_bounds(width,height)
     elseif self.camera.y > height - self.camera.h then
         self.camera.y = height - self.camera.h
     end
+    return hit
 end

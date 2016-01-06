@@ -15,24 +15,37 @@ function Object:reset(x,y)
     self.dir = torch.zeros(2)
     self.speed = 200
 end
+function Object:set_position(x,y)
+    self.pos.x = x
+    self.pos.y = y
+end
 
 function Object:handle_col(oo)
     self.pos.x = 2*self.pos.x - oo.pos.x
     self.pos.y = 2*self.pos.y - oo.pos.y
 end
 
+--prevents leaving the local map
+--return which edges (if any) were hit
+--e.g. (0,1) for top edge, (-1,0) for left edge
 function Object:handle_bounds(width,height)
+    local hit = torch.zeros(2)
     if self.pos.x > width - self.pos.w then
         self.pos.x = width - self.pos.w
+        hit[1] = 1
     elseif self.pos.x < 0 then
         self.pos.x = 0 
+        hit[1] = -1
     end
 
     if self.pos.y > height - self.pos.h then
         self.pos.y = height - self.pos.h
+        hit[2] = -1
     elseif self.pos.y < 0 then
         self.pos.y = 0
+        hit[2] = 1
     end
+    return hit
 end
 --]]
 function Object:handle_movement(dt)

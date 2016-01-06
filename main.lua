@@ -13,7 +13,7 @@ has_minimap = true
 
 
 local running	= true
-local disp	= { }
+disp = { }
 local width	=  1920
 local height	= 1080
 local cam_width,cam_height = 336,336
@@ -50,6 +50,103 @@ function render(graphics,camera)
         obj:render(graphics,camera)
     end
 end
+local function get_tile_rect(r,c)
+    local rect= {}
+    rect.x = (r-1)*tile_size[1]
+    rect.y = (c-1)*tile_size[2]
+    rect.w = tile_size[1]
+    rect.h = tile_size[2]
+    return rect
+end
+
+--sets up all of the additional effects of a tiles type
+--to be called whenever that type has changed
+local function add_tile_effects(tile_type,row,col)
+    grow_time[row][col] = 0
+    if tile_type == 1 then
+        col_tiles[(row-1)*num_tiles[1]+ col] = nil
+    elseif tile_type == 2 then
+        col_tiles[(row-1)*num_tiles[1]+ col] = get_tile_rect(row,col)
+    elseif tile_type == 4 then
+        grow_time[row][col] = 1
+    elseif tile_type == 5 then
+        local struct = {}
+        struct.rect = get_tile_rect(row,col)
+        struct.ind = torch.Tensor{row,col}
+        table.insert(heal_tiles,struct)
+    end
+end
+
+--changes an individual tile *not* a map
+--as isn't switching tile_list by reference
+local function change_tile(tile_type,row,col)
+    tile_list[row][col] = tile_type
+    add_tile_effects(tile_type,row,col)
+end
+local function load_tilemap(map)
+    tile_list = map
+    for x = 1,num_tiles[1] do
+        for y = 1,num_tiles[2] do
+            add_tile_effects(map[x][y],x,y)
+        end
+    end
+end
+local function generate_region()
+    local region = {}
+    --tilemap generate
+    region.tile = torch.ones(num_tiles[1],num_tiles[2])
+    tile_mask = torch.rand(region.tile:size()):gt(.95)
+    region.tile[tile_mask] = 2
+    --movable object generation
+    region.objects = {}
+    table.insert(region.objects,agent)
+    --table.insert(region.objects,pokemon)
+    ball = Ball(0,0,tile_size,'agent',{x=16*7+2,y=16*15+3,h=16,w=16})
+    table.insert(region.objects,ball)
+    return region
+end
+local function update_world_map()
+    for i=1,world.w do
+        for j=1,world.h do
+            local img,img_pos
+            img = wm.bg
+            --TODO:have map icons mean something
+            img_pos = tileset[torch.random(5)]
+            local dest_pos = {x=(i-1)*wm.tile_size,y=(world.h-j)*wm.tile_size,w=wm.tile_size,h=wm.tile_size}
+            wm.rdr:copy(img,img_pos,dest_pos)
+            if i == world.x and j == world.y then
+                img = wm.agent
+                img_pos = {x=16*0+2,y=16*0+3,h=16,w=16}
+                wm.rdr:copy(img,img_pos,dest_pos)
+            end
+        end
+    end
+    wm.rdr:present()
+    wm.win:updateSurface()
+end
+local function change_region(x,y)
+    --if not generated, then generate
+    if next(world.region[x][y]) == nil then
+        world.region[x][y] = generate_region()
+    end
+    load_tilemap(world.region[x][y].tile)
+    col_objs = world.region[x][y].objects
+    update_world_map()
+end
+
+local function get_tile_ind(rect)
+    local x = rect.x+rect.w/2
+    local y = rect.y+rect.w/2
+    local r = math.floor(x/tile_size[1])+1
+    local c = math.floor(y/tile_size[2])+1
+    return r,c
+end
+local function collide(r1,r2)
+    return r1.x + r1.w > r2.x and
+        r1.x < r2.x + r2.w and
+        r1.y + r1.h > r2.y and
+        r1.y < r2.y + r2.h
+end
 local function initialize()
     --SDL.setHint('21','2')
     col_objs = {}
@@ -64,8 +161,30 @@ local function initialize()
 	end
     --monitor info, like resolution (w,h)
     desktop = SDL.getDesktopDisplayMode(0)
+
+
+    --init world map
+    --its standard x,y coords
+    world = {}
+    world.w = 10
+    world.h = 7
+    world.x = 1
+    world.y = 1
+    world.region = {}
+    for i = 1,world.w do
+        world.region[i] = {}
+        for j = 1,world.h do
+            world.region[i][j] = {}
+        end
+    end
+    --TODO: encapulate all region aspects
+    col_tiles = {}
+    heal_tiles = {}
+
+
     disp.scale = 3
     bot = {}
+    bot.timer = torch.Timer()
     bot.scale = 1/4
     bot.w,bot.h = cam_width*bot.scale,cam_height*bot.scale
     if has_human then
@@ -90,11 +209,24 @@ local function initialize()
             --disp.win:setPosition(width*mm.scale,0)
             mm.surf = mm.win:getSurface()
             mm.rdr, err = SDL.createSoftwareRenderer(mm.surf,-1)
-            mm.rdr:present()
-            mm.win:updateSurface()
             mm.bg = load_image("res/pokeback.png",mm.rdr)
             mm.agent = load_image("res/overworld.png",mm.rdr)
         end
+        --]]---------------------------------------------------
+        --setup world map-------------------------------------
+        wm = {}
+        wm.tile_size = 20
+        wm.win,err = SDL.createWindow {
+            title = "World Map",
+            width = world.w*wm.tile_size,
+            height = world.h*wm.tile_size,
+        }
+        wm.win:setPosition(desktop.w-world.w*wm.tile_size,desktop.h/2)
+        wm.surf = wm.win:getSurface()
+        wm.rdr,err = SDL.createSoftwareRenderer(wm.surf,-1)
+        wm.bg = load_image("res/pokeback.png",wm.rdr)
+        wm.agent = load_image("res/overworld.png",wm.rdr)
+
         --]]---------------------------------------------------
         if has_bot then
             bot.win, err = SDL.createWindow {
@@ -120,7 +252,6 @@ local function initialize()
                    tile_size,
                    'agent',
                    {x=16*0+2,y=16*0+3,h=16,w=16},cam_width,cam_height)
-        table.insert(col_objs,agent)
         camera = agent.camera
     end
     if has_bot then
@@ -136,96 +267,55 @@ local function initialize()
                    tile_size,
                    'agent',
                    {x=16*4+2,y=16*14+3,h=16,w=16},cam_width,cam_height)
-        table.insert(col_objs,pokemon)
+        pokemon.record = not has_human
     end
 
 
-    --ball = Ball(0,0,tile_size,bg,{x=16*22,y=16*10,w=16,h=16})
-    ball = Ball(0,0,tile_size,'agent',{x=16*7+2,y=16*15+3,h=16,w=16})
-    table.insert(col_objs,ball)
+    tileset = {}
+    --grass
+    tileset[1] = {}
+    tileset[1].x = bg_w/2+16*-2
+    tileset[1].y = bg_h-2*16
+    tileset[1].w = 16
+    tileset[1].h = 16
+    --wall
+    tileset[2] = {}
+    tileset[2].x = bg_w/2 - 16
+    tileset[2].y = 16*4
+    tileset[2].w = 16
+    tileset[2].h = 16
+    --tree
+    tileset[3] = {}
+    tileset[3].x = bg_w/2+16
+    tileset[3].y = 16*4
+    tileset[3].w = 16
+    tileset[3].h = 16
+    --short grass
+    tileset[4] = {}
+    tileset[4].x = bg_w/2+16*2
+    tileset[4].y = 0
+    tileset[4].w = 16
+    tileset[4].h = 16
+    --tall grass
+    tileset[5] = {}
+    tileset[5].x = bg_w/2+16
+    tileset[5].y = 0
+    tileset[5].w = 16
+    tileset[5].h = 16
+
+
 
     tile_list = torch.ones(num_tiles[1],num_tiles[2])
     grow_time = torch.zeros(num_tiles[1],num_tiles[2])
-end
-local function get_tile_ind(rect)
-    local x = rect.x+rect.w/2
-    local y = rect.y+rect.w/2
-    local r = math.floor(x/tile_size[1])+1
-    local c = math.floor(y/tile_size[2])+1
-    return r,c
-end
-local function get_tile_rect(r,c)
-    local rect= {}
-    rect.x = (r-1)*tile_size[1]
-    rect.y = (c-1)*tile_size[2]
-    rect.w = tile_size[1]
-    rect.h = tile_size[2]
-    return rect
-end
-local function collide(r1,r2)
-    return r1.x + r1.w > r2.x and
-        r1.x < r2.x + r2.w and
-        r1.y + r1.h > r2.y and
-        r1.y < r2.y + r2.h
+
+
+    change_region(world.x,world.y)
+    table.insert(col_objs,pokemon)
+    
+
 end
 initialize()
-tileset = {}
---grass
-tileset[1] = {}
-tileset[1].x = bg_w/2+16*-2
-tileset[1].y = bg_h-2*16
-tileset[1].w = 16
-tileset[1].h = 16
---wall
-tileset[2] = {}
-tileset[2].x = bg_w/2 - 16
-tileset[2].y = 16*4
-tileset[2].w = 16
-tileset[2].h = 16
---tree
-tileset[3] = {}
-tileset[3].x = bg_w/2+16
-tileset[3].y = 16*4
-tileset[3].w = 16
-tileset[3].h = 16
---short grass
-tileset[4] = {}
-tileset[4].x = bg_w/2+16*2
-tileset[4].y = 0
-tileset[4].w = 16
-tileset[4].h = 16
---tall grass
-tileset[5] = {}
-tileset[5].x = bg_w/2+16
-tileset[5].y = 0
-tileset[5].w = 16
-tileset[5].h = 16
 local pressed = {}
-local col_tiles = {}
-local heal_tiles = {}
-local function change_tile(tile_type,row,col)
-    tile_list[row][col] = tile_type
-    grow_time[row][col] = 0
-    if tile_type == 1 then
-        col_tiles[(row-1)*num_tiles[1]+ col] = nil
-    elseif tile_type == 4 then
-        grow_time[row][col] = 1
-    else
-        col_tiles[(row-1)*num_tiles[1]+ col] = get_tile_rect(row,col)
-    end
-    
-end
-local function load_tilemap(map)
-    for x = 1,num_tiles[1] do
-        for y = 1,num_tiles[2] do
-            change_tile(map[x][y],x,y)
-        end
-    end
-end
-my_map = torch.ones(num_tiles[1],num_tiles[2])
-tile_mask = torch.rand(my_map:size()):gt(.95)
-my_map[tile_mask] = 2
-load_tilemap(my_map)
 while running do
     --[[
     local my_r,my_c = get_tile_ind(agent.pos)
@@ -260,6 +350,11 @@ while running do
                 agent.dir[1] = agent.dir[1] + 1
             elseif key_name == 'Escape' and not pressed[e.keysym.sym] then
                 running = false
+            elseif key_name == 'Left' and not pressed[e.keysym.sym] then
+                world.x = torch.random(world.w)
+                world.y = torch.random(world.h)
+                print(world.x,world.y)
+                change_region(world.x,world.y)
             elseif key_name == 'Down' and not pressed[e.keysym.sym] then
                 camera = pokemon.camera
             elseif key_name == 'Up' and not pressed [e.keysym.sym] then
@@ -289,11 +384,22 @@ while running do
 
     --
     if has_bot then
-        pic = get_pixels(bot)
-        render(bot,pokemon.camera)
-        --gnuplot.imagesc(pic)
-        --gnuplot.plotflush()
-        pokemon:forward(pic)
+        if bot.timer:time().real > (1/fps)*2 then
+            bot.timer:reset()
+                
+            render(bot,pokemon.camera)
+            if not has_human then
+                pic = get_pixels(bot)
+                pokemon:forward(pic)
+            else
+                pokemon:forward()
+                bot.rdr:present()
+                bot.win:updateSurface()
+            end
+            --gnuplot.imagesc(pic)
+            --gnuplot.plotflush()
+        end
+        
     end
     if has_human then
         if has_minimap then
@@ -307,10 +413,6 @@ while running do
         render(disp,camera)
         disp.rdr:present()
         disp.win:updateSurface()
-        if has_bot then
-            bot.rdr:present()
-            bot.win:updateSurface()
-        end
     end
     --]]
     --handle collisions----------------------------------- 
@@ -339,7 +441,40 @@ while running do
             end
         end
         --boundary collisions
-        obj:handle_bounds(width,height)
+        local hit = obj:handle_bounds(width,height)
+        if obj == agent and hit:ne(0):any() then 
+            if hit[1] == -1 then
+                world.x = world.x+hit[1]
+                if world.x < 1 then
+                    world.x = 1
+                else
+                    agent:set_position(width-agent.pos.w*2,agent.pos.y)
+                end
+            elseif hit[1] == 1 then
+                world.x = world.x+hit[1]
+                if world.x > world.w then
+                    world.x = world.w
+                else
+                    agent:set_position(agent.pos.w*2,agent.pos.y)
+                end
+            elseif hit[2] == -1 then
+                world.y = world.y+hit[2]
+                if world.y < 1 then
+                    world.y = 1
+                else
+                    agent:set_position(agent.pos.x,agent.pos.h*2)
+                end
+            elseif hit[2] == 1 then
+                world.y = world.y+hit[2]
+                if world.y > world.h then
+                    world.y = world.h
+                else
+                    agent:set_position(agent.pos.x,height-agent.pos.h*2)
+                end
+            end
+
+            change_region(world.x,world.y)
+        end
     end
     --remove dead tiles
     for i = 1,#kill do
@@ -351,15 +486,20 @@ while running do
     local fully_grown = grow_time:gt(50)
     local num_grown = fully_grown:sum()
     if num_grown  > 0 then
+        local inds = fully_grown:nonzero()
+        for i= 1,num_grown do
+            change_tile(5,inds[i][1],inds[i][2])
+        end
+        --[[
         grow_time[fully_grown] = 0
         tile_list[fully_grown] = 5
-        local inds = fully_grown:nonzero()
         for i= 1,num_grown do
             local struct = {}
             struct.rect = get_tile_rect(inds[i][1],inds[i][2])
             struct.ind = inds[i]
             table.insert(heal_tiles,struct)
         end
+        --]]
     end
     local extra_time = (1/fps - frame_timer:time().real)*1000
     if extra_time > 0 then
