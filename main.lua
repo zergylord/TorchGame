@@ -9,6 +9,8 @@ require 'gnuplot'
 
 has_human = true
 has_bot = true
+has_minimap = true
+
 
 local running	= true
 local disp	= { }
@@ -18,7 +20,7 @@ local cam_width,cam_height = 336,336
 local num_tiles = {80,45}
 local tile_size = {width/num_tiles[1],height/num_tiles[2]}
 local obj_size = {tile_size[1]/2,tile_size[2]/2}
-timer = torch.Timer()
+frame_timer = torch.Timer()
 local fps = 20
 local dt = 1/fps
 function get_pixels(graphics)
@@ -60,33 +62,54 @@ local function initialize()
 	if not ret then
 		error(err)
 	end
-    --TODO: try surface rendering (has pixels)
-    --e.g. sur = win:getSurface() sur:blit(other sur)
+    --monitor info, like resolution (w,h)
+    desktop = SDL.getDesktopDisplayMode(0)
     disp.scale = 3
     bot = {}
     bot.scale = 1/4
     bot.w,bot.h = cam_width*bot.scale,cam_height*bot.scale
     if has_human then
-        win, err = SDL.createWindow {
+        disp.win, err = SDL.createWindow {
             title	= "Game",
             width	= cam_width*disp.scale,
             height	= cam_height*disp.scale,
         }
+        --setup minimap--------------------------------------
+        if has_minimap then
+            mm = {}
+            mm.timer = torch.Timer()
+            mm.timer:reset()
+            mm.scale = 1/4
+            mm.camera = {x=0,y=0,w=width,h=height}
+            mm.win, err = SDL.createWindow {
+                title	= "Map",
+                width	= width*mm.scale,
+                height	= height*mm.scale,
+            }
+            mm.win:setPosition(desktop.w-width*mm.scale,0)
+            --disp.win:setPosition(width*mm.scale,0)
+            mm.surf = mm.win:getSurface()
+            mm.rdr, err = SDL.createSoftwareRenderer(mm.surf,-1)
+            mm.rdr:present()
+            mm.win:updateSurface()
+            mm.bg = load_image("res/pokeback.png",mm.rdr)
+            mm.agent = load_image("res/overworld.png",mm.rdr)
+        end
+        --]]---------------------------------------------------
         if has_bot then
-            interface, err = SDL.createWindow {
+            bot.win, err = SDL.createWindow {
                 title	= "Pokemon",
                 width	= cam_width*bot.scale,
                 height	= cam_height*bot.scale,
             }
-            inter_surf = interface:getSurface()
+            bot.win_surf = bot.win:getSurface()
+            --bottom right
+            bot.win:setPosition(desktop.w-cam_width*bot.scale,desktop.h-cam_width*bot.scale)
         end
-        win_surf = win:getSurface()
-        rdr, err = SDL.createSoftwareRenderer(win_surf, -1)
-        --setup global disp
-        disp.bg = load_image("res/pokeback.png",rdr)
-        disp.agent = load_image("res/overworld.png",rdr)
-        disp.win	= win
-        disp.rdr	= rdr
+        disp.surf = disp.win:getSurface()
+        disp.rdr, err = SDL.createSoftwareRenderer(disp.surf, -1)
+        disp.bg = load_image("res/pokeback.png",disp.rdr)
+        disp.agent = load_image("res/overworld.png",disp.rdr)
         -- Get the size of the bg
         local f, a, w, h = disp.bg:query()
         bg_w = w
@@ -101,11 +124,7 @@ local function initialize()
         camera = agent.camera
     end
     if has_bot then
-        if has_human then
-            bot.surf = inter_surf  
-        else
-            bot.surf = SDL.createRGBSurface(bot.w,bot.h) 
-        end
+        bot.surf = bot.win_surf or SDL.createRGBSurface(bot.w,bot.h) 
         bot.rdr, err = SDL.createSoftwareRenderer(bot.surf, -1)
         bot.agent = load_image("res/overworld.png",bot.rdr)
         bot.bg = load_image("res/pokeback.png",bot.rdr)
@@ -212,7 +231,7 @@ while running do
     local my_r,my_c = get_tile_ind(agent.pos)
     print(my_r,my_c)
     --]]
-    timer:reset()
+    frame_timer:reset()
 	for e in SDL.pollEvent() do
 		if e.type == SDL.event.Quit then
 			running = false
@@ -277,12 +296,20 @@ while running do
         pokemon:forward(pic)
     end
     if has_human then
+        if has_minimap then
+            if mm.timer:time().real > (1/fps)*10 then
+                mm.timer:reset()
+                render(mm,mm.camera)
+                mm.rdr:present()
+                mm.win:updateSurface()
+            end
+        end
         render(disp,camera)
         disp.rdr:present()
-        win:updateSurface()
+        disp.win:updateSurface()
         if has_bot then
             bot.rdr:present()
-            interface:updateSurface()
+            bot.win:updateSurface()
         end
     end
     --]]
@@ -334,11 +361,11 @@ while running do
             table.insert(heal_tiles,struct)
         end
     end
-    local extra_time = (1/fps - timer:time().real)*1000
+    local extra_time = (1/fps - frame_timer:time().real)*1000
     if extra_time > 0 then
 	   SDL.delay(extra_time)
     else
         --print('lagging by:',-1/(extra_time/1000),' fps')
-        print('fps:',math.ceil(1 / timer:time().real))
+        print('fps:',math.ceil(1 / frame_timer:time().real))
     end
 end
