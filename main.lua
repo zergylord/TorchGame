@@ -6,6 +6,7 @@ SDL	= require "SDL"
 image	= require "SDL.image"
 require 'Agent'
 require 'gnuplot'
+require 'nn'
 
 has_human = true
 has_bot = true
@@ -21,6 +22,7 @@ local num_tiles = {80,45}
 local tile_size = {width/num_tiles[1],height/num_tiles[2]}
 local obj_size = {tile_size[1]/2,tile_size[2]/2}
 frame_timer = torch.Timer()
+blight_timer = torch.Timer()
 local fps = 20
 local dt = 1/fps
 function get_pixels(graphics)
@@ -74,12 +76,27 @@ local function add_tile_effects(tile_type,row,col)
         struct.rect = get_tile_rect(row,col)
         struct.ind = torch.Tensor{row,col}
         table.insert(heal_tiles,struct)
+    elseif tile_type == 6 then
+    end
+end
+
+local function remove_tile_effects(row,col)
+    local tile_type = tile_list[row][col]
+    if tile_type == 1 then
+    elseif tile_type == 2 then
+        col_tiles[(row-1)*num_tiles[1]+ col] = nil
+    elseif tile_type == 4 then
+        grow_time[row][col] = 0
+    elseif tile_type == 5 then
+        --TODO:change heal_tiles to array to ease removal
+    elseif tile_type == 6 then
     end
 end
 
 --changes an individual tile *not* a map
 --as isn't switching tile_list by reference
 local function change_tile(tile_type,row,col)
+    remove_tile_effects(row,col)
     tile_list[row][col] = tile_type
     add_tile_effects(tile_type,row,col)
 end
@@ -87,6 +104,7 @@ local function load_tilemap(map)
     tile_list = map
     for x = 1,num_tiles[1] do
         for y = 1,num_tiles[2] do
+            remove_tile_effects(x,y)
             add_tile_effects(map[x][y],x,y)
         end
     end
@@ -95,8 +113,12 @@ local function generate_region()
     local region = {}
     --tilemap generate
     region.tile = torch.ones(num_tiles[1],num_tiles[2])
-    tile_mask = torch.rand(region.tile:size()):gt(.95)
+    --trees
+    local tile_mask = torch.rand(region.tile:size()):gt(.95)
     region.tile[tile_mask] = 2
+    --blight
+    tile_mask = torch.rand(region.tile:size()):gt(.8)
+    region.tile[tile_mask] = 6
     --movable object generation
     region.objects = {}
     table.insert(region.objects,agent)
@@ -147,6 +169,11 @@ local function collide(r1,r2)
         r1.y + r1.h > r2.y and
         r1.y < r2.y + r2.h
 end
+count_neighbors = nn.SpatialConvolution(1,1,3,3,1,1,1,1)
+--2 nearest
+--count_neighbors = nn.SpatialConvolution(1,1,5,5,1,1,2,2)
+count_neighbors.weight:zero():add(1)
+count_neighbors.bias:zero()
 local function initialize()
     --SDL.setHint('21','2')
     col_objs = {}
@@ -180,6 +207,7 @@ local function initialize()
     --TODO: encapulate all region aspects
     col_tiles = {}
     heal_tiles = {}
+    blight_tiles = {}
 
 
     disp.scale = 3
@@ -302,6 +330,12 @@ local function initialize()
     tileset[5].y = 0
     tileset[5].w = 16
     tileset[5].h = 16
+    --blight
+    tileset[6] = {}
+    tileset[6].x = 16*8
+    tileset[6].y = 0
+    tileset[6].w = 16
+    tileset[6].h = 16
 
 
 
@@ -421,6 +455,7 @@ while running do
         --movement 
         obj:handle_movement(dt)
         --static/dynamic collisions
+        --TODO:unify tiles
         for _,tile in pairs(col_tiles) do
             if collide(tile,obj.pos) then
                 obj:handle_col({pos = tile,contact_damage = 0})
@@ -429,6 +464,14 @@ while running do
         for k,tile in pairs(heal_tiles) do
             if collide(tile.rect,obj.pos) then
                 obj:handle_col({pos = tile.rect,contact_damage = -.1})
+                table.insert(kill,k)
+                tile_list[tile.ind[1] ][tile.ind[2] ] = 1
+            end
+        end
+        for k,tile in pairs(blight_tiles) do
+            --collision
+            if collide(tile.rect,obj.pos) then
+                obj:handle_col({pos = tile.rect,contact_damage = .1})
                 table.insert(kill,k)
                 tile_list[tile.ind[1] ][tile.ind[2] ] = 1
             end
@@ -490,17 +533,37 @@ while running do
         for i= 1,num_grown do
             change_tile(5,inds[i][1],inds[i][2])
         end
-        --[[
-        grow_time[fully_grown] = 0
-        tile_list[fully_grown] = 5
-        for i= 1,num_grown do
-            local struct = {}
-            struct.rect = get_tile_rect(inds[i][1],inds[i][2])
-            struct.ind = inds[i]
-            table.insert(heal_tiles,struct)
-        end
-        --]]
     end
+    --blight tile logic---------------
+    if blight_timer:time().real > 100/fps then
+        blight_timer:reset()
+        local blighted = tile_list:reshape(1,num_tiles[1],num_tiles[2]):eq(6):double()
+        local not_blighted = blighted:eq(0)
+        local blight_counts = count_neighbors:forward(blighted)
+        --blighted and few (less than 2) neighbors, kill
+        local mask = blight_counts:lt(2):cmul(blighted:byte())[{1,{},{}}]
+        local inds = mask:nonzero()
+        for i=1,mask:sum() do
+            change_tile(1,inds[i][1],inds[i][2])
+        end
+        --blighted and many (more than 3) neighbors, kill
+        mask = blight_counts:gt(3):cmul(blighted:byte())[{1,{},{}}]
+        inds = mask:nonzero()
+        for i=1,mask:sum() do
+            change_tile(1,inds[i][1],inds[i][2])
+        end
+        --not blighted and 3 neighbors, become blight
+        mask = blight_counts:eq(3):cmul(not_blighted)[{1,{},{}}]
+        inds = mask:nonzero()
+        for i=1,mask:sum() do
+            change_tile(6,inds[i][1],inds[i][2])
+        end
+
+    end
+    ----------------------------------
+    
+
+
     local extra_time = (1/fps - frame_timer:time().real)*1000
     if extra_time > 0 then
 	   SDL.delay(extra_time)
