@@ -1,5 +1,5 @@
 require 'load_image'
-local Agent,parent = torch.class('Agent','Object')
+local Agent,parent = torch.class('Agent','Being')
 
 function Agent:__init(x,y,tile_size,sheet,sheet_pos,cam_width,cam_height)
     parent.__init(self,x,y,tile_size,sheet,sheet_pos)
@@ -10,15 +10,8 @@ function Agent:__init(x,y,tile_size,sheet,sheet_pos,cam_width,cam_height)
 end
 function Agent:reset(x,y)
     parent.reset(self,x,y)
-    self.hp = self.max_hp
-    self.dead = false
 end
 
-function Agent:handle_col(oo)
-    self.pos.x = 2*self.pos.x - oo.pos.x
-    self.pos.y = 2*self.pos.y - oo.pos.y
-    self.hp = math.min(self.max_hp,self.hp - oo.contact_damage)
-end
 --used for normal movement. camera slowly tracking player
 function Agent:handle_movement(dt)
     parent.handle_movement(self,dt)
@@ -37,6 +30,7 @@ function Agent:set_position(x,y)
     self.camera.x = self.pos.x + self.pos.w/2- self.camera.w/2
     self.camera.y = self.pos.y + self.pos.h/2- self.camera.h/2
 end
+--handle camera not going off region
 function Agent:handle_bounds(width,height)
     local hit = parent.handle_bounds(self,width,height)
     if self.camera.x < 0 then
@@ -51,14 +45,6 @@ function Agent:handle_bounds(width,height)
     end
     return hit
 end
-local hp_bar_height = 5
 function Agent:render(graphics,camera)
     parent.render(self,graphics,camera)
-    --
-    local temp = {x=(self.pos.x-camera.x)*graphics.scale,
-                y=(self.pos.y-hp_bar_height-5-camera.y)*graphics.scale,
-                w=(self.hp/self.max_hp)*self.pos.w*graphics.scale,
-                h=(hp_bar_height)*graphics.scale}
-    graphics.rdr:fillRect(temp)
-    --]]
 end

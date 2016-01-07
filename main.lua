@@ -1,5 +1,6 @@
 require 'load_image' 
 require 'Object'
+require 'Being'
 require 'Ball'
 require 'Bot'
 SDL	= require "SDL"
@@ -129,8 +130,10 @@ local function generate_region()
     region.objects = {}
     table.insert(region.objects,agent)
     --table.insert(region.objects,pokemon)
-    ball = Ball(0,0,tile_size,'agent',{x=16*7+2,y=16*15+3,h=16,w=16})
-    table.insert(region.objects,ball)
+    for b=1,10 do
+        local ball = Ball(torch.random(height),torch.random(width),tile_size,'agent',{x=16*7+2,y=16*15+3,h=16,w=16})
+        table.insert(region.objects,ball)
+    end
     return region
 end
 local function update_world_map()

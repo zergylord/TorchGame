@@ -1,4 +1,5 @@
-local Ball,parent = torch.class('Ball','Object')
+--A being that only changes direction on collision
+local Ball,parent = torch.class('Ball','Being')
 function Ball:__init(x,y,tile_size,sheet,sheet_pos)
     parent.__init(self,x,y,tile_size,sheet,sheet_pos)
     self.contact_damage = 1
@@ -6,12 +7,15 @@ function Ball:__init(x,y,tile_size,sheet,sheet_pos)
 end
 function Ball:reset(x,y)
     parent.reset(self,x,y)
-    self.dir = torch.ones(2)
+    self.dir = torch.rand(2):add(-.5):mul(2)
 end
 
 function Ball:handle_col(oo)
     parent.handle_col(self,oo)
     self.dir:mul(-1)
+    if oo.dir then
+        self.dir = self.dir + oo.dir
+    end
 end
 function Ball:handle_bounds(width,height)
     if self.dir[1] > 0 and self.pos.x > width - self.pos.w then
