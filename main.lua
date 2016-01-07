@@ -60,6 +60,14 @@ local function get_tile_rect(r,c)
     rect.h = tile_size[2]
     return rect
 end
+local function add_col_tile(row,col,dam,kill)
+    local ind = (row-1)*num_tiles[1]+ col
+    col_tiles[ind] = {} 
+    col_tiles[ind].rect = get_tile_rect(row,col)
+    col_tiles[ind].ind = torch.Tensor{row,col}
+    col_tiles[ind].killable = kill
+    col_tiles[ind].contact_damage = dam
+end
 
 --sets up all of the additional effects of a tiles type
 --to be called whenever that type has changed
@@ -68,15 +76,13 @@ local function add_tile_effects(tile_type,row,col)
     if tile_type == 1 then
         col_tiles[(row-1)*num_tiles[1]+ col] = nil
     elseif tile_type == 2 then
-        col_tiles[(row-1)*num_tiles[1]+ col] = get_tile_rect(row,col)
+        add_col_tile(row,col,0,false)
     elseif tile_type == 4 then
         grow_time[row][col] = 1
     elseif tile_type == 5 then
-        local struct = {}
-        struct.rect = get_tile_rect(row,col)
-        struct.ind = torch.Tensor{row,col}
-        table.insert(heal_tiles,struct)
+        add_col_tile(row,col,-1,true)
     elseif tile_type == 6 then
+        add_col_tile(row,col,1,true)
     end
 end
 
@@ -88,7 +94,7 @@ local function remove_tile_effects(row,col)
     elseif tile_type == 4 then
         grow_time[row][col] = 0
     elseif tile_type == 5 then
-        --TODO:change heal_tiles to array to ease removal
+        col_tiles[(row-1)*num_tiles[1]+ col] = nil
     elseif tile_type == 6 then
     end
 end
@@ -204,10 +210,7 @@ local function initialize()
             world.region[i][j] = {}
         end
     end
-    --TODO: encapulate all region aspects
     col_tiles = {}
-    heal_tiles = {}
-    blight_tiles = {}
 
 
     disp.scale = 3
@@ -440,6 +443,10 @@ while running do
             if mm.timer:time().real > (1/fps)*10 then
                 mm.timer:reset()
                 render(mm,mm.camera)
+                mm.rdr:drawRect{x= camera.x*mm.scale,
+                                y= camera.y*mm.scale,
+                                w= camera.w*mm.scale,
+                                h= camera.h*mm.scale}
                 mm.rdr:present()
                 mm.win:updateSurface()
             end
@@ -452,32 +459,25 @@ while running do
     --handle collisions----------------------------------- 
     local kill = {}
     for _,obj in pairs(col_objs) do
+        if obj.dead then
+            obj:reset(torch.random(height),torch.random(width))
+        end
         --movement 
         obj:handle_movement(dt)
         --static/dynamic collisions
         --TODO:unify tiles
-        for _,tile in pairs(col_tiles) do
-            if collide(tile,obj.pos) then
-                obj:handle_col({pos = tile,contact_damage = 0})
-            end
-        end
-        for k,tile in pairs(heal_tiles) do
+        for k,tile in pairs(col_tiles) do
             if collide(tile.rect,obj.pos) then
-                obj:handle_col({pos = tile.rect,contact_damage = -.1})
-                table.insert(kill,k)
-                tile_list[tile.ind[1] ][tile.ind[2] ] = 1
-            end
-        end
-        for k,tile in pairs(blight_tiles) do
-            --collision
-            if collide(tile.rect,obj.pos) then
-                obj:handle_col({pos = tile.rect,contact_damage = .1})
-                table.insert(kill,k)
-                tile_list[tile.ind[1] ][tile.ind[2] ] = 1
+                obj:handle_col({pos = tile.rect,contact_damage = tile.contact_damage})
+                if tile.killable then
+                    table.insert(kill,k)
+                    change_tile(1,tile.ind[1],tile.ind[2])
+                end
             end
         end
         --dynamic/dynamic collisions
         for _,obj2 in pairs(col_objs) do
+            --NOTE: collisions stop instantly, or double collision handling happpens!
             if obj ~= obj2 and  collide(obj.pos,obj2.pos) then
                 obj:handle_col(obj2)
                 obj2:handle_col(obj)
@@ -485,6 +485,7 @@ while running do
         end
         --boundary collisions
         local hit = obj:handle_bounds(width,height)
+        --region change on boundary hits
         if obj == agent and hit:ne(0):any() then 
             if hit[1] == -1 then
                 world.x = world.x+hit[1]
@@ -521,12 +522,12 @@ while running do
     end
     --remove dead tiles
     for i = 1,#kill do
-        table.remove(heal_tiles,kill[i])
+        table.remove(col_tiles,kill[i])
     end
     --heal tile logic----------------
     local grow_mask = grow_time:gt(0)
-    grow_time[grow_mask] = grow_time[grow_mask] + 1
-    local fully_grown = grow_time:gt(50)
+    grow_time[grow_mask] = grow_time[grow_mask] + dt
+    local fully_grown = grow_time:gt(10)
     local num_grown = fully_grown:sum()
     if num_grown  > 0 then
         local inds = fully_grown:nonzero()
@@ -535,32 +536,42 @@ while running do
         end
     end
     --blight tile logic---------------
-    if blight_timer:time().real > 100/fps then
+    if blight_timer:time().real > 50*(1/fps) then
         blight_timer:reset()
-        local blighted = tile_list:reshape(1,num_tiles[1],num_tiles[2]):eq(6):double()
+        --update 1/25th
+        update_div = 5
+        local updated_ind = {}
+        updated_ind[1] = torch.random(num_tiles[1] - num_tiles[1]/update_div+1)
+        updated_ind[2] = torch.random(num_tiles[2] - num_tiles[2]/update_div+1)
+        local updated_tiles = tile_list[{{updated_ind[1],updated_ind[1]+num_tiles[1]/update_div-1},
+                                        {updated_ind[2],updated_ind[2]+num_tiles[2]/update_div-1}}]
+        local blighted = updated_tiles:reshape(1,num_tiles[1]/update_div,num_tiles[2]/update_div):eq(6):double()
+        --update everything
+        --local blighted = tile_list:reshape(1,num_tiles[1],num_tiles[2]):eq(6):double()
+        
         local not_blighted = blighted:eq(0)
         local blight_counts = count_neighbors:forward(blighted)
         --blighted and few (less than 2) neighbors, kill
         local mask = blight_counts:lt(2):cmul(blighted:byte())[{1,{},{}}]
         local inds = mask:nonzero()
         for i=1,mask:sum() do
-            change_tile(1,inds[i][1],inds[i][2])
+            change_tile(1,updated_ind[1]-1+inds[i][1],updated_ind[2]-1+inds[i][2])
         end
         --blighted and many (more than 3) neighbors, kill
         mask = blight_counts:gt(3):cmul(blighted:byte())[{1,{},{}}]
         inds = mask:nonzero()
         for i=1,mask:sum() do
-            change_tile(1,inds[i][1],inds[i][2])
+            change_tile(1,updated_ind[1]-1+inds[i][1],updated_ind[2]-1+inds[i][2])
         end
         --not blighted and 3 neighbors, become blight
         mask = blight_counts:eq(3):cmul(not_blighted)[{1,{},{}}]
         inds = mask:nonzero()
         for i=1,mask:sum() do
-            change_tile(6,inds[i][1],inds[i][2])
+            change_tile(6,updated_ind[1]-1+inds[i][1],updated_ind[2]-1+inds[i][2])
         end
 
     end
-    ----------------------------------
+    --]]--------------------------------
     
 
 

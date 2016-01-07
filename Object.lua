@@ -7,12 +7,11 @@ function Object:__init(x,y,tile_size,sheet,sheet_pos)
     self.contact_damage = 0
     self.sheet = sheet
     self.sheet_pos = sheet_pos
+    self.dir = torch.zeros(2)
 end
 
 function Object:reset(x,y)
-    self.pos.x = x
-    self.pos.y = y
-    self.dir = torch.zeros(2)
+    self:set_position(x,y)
     self.speed = 200
 end
 function Object:set_position(x,y)
