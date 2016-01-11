@@ -10,8 +10,9 @@ require 'gnuplot'
 require 'nn'
 
 has_human = true
-has_bot = true
+--has_bot = true
 has_minimap = true
+num_balls = 10
 
 
 local running	= true
@@ -116,6 +117,10 @@ local function load_tilemap(map)
         end
     end
 end
+
+--region contains:
+--tile: a 2D tilemap
+--objects: movable objects e.g. agents, balls
 local function generate_region()
     local region = {}
     --tilemap generate
@@ -128,13 +133,28 @@ local function generate_region()
     region.tile[tile_mask] = 6
     --movable object generation
     region.objects = {}
-    table.insert(region.objects,agent)
+    table.insert(region.objects,world.agent)
     --table.insert(region.objects,pokemon)
-    for b=1,10 do
+    for b=1,num_balls do
         local ball = Ball(torch.random(height),torch.random(width),tile_size,'agent',{x=16*7+2,y=16*15+3,h=16,w=16})
         table.insert(region.objects,ball)
     end
     return region
+end
+local function save_world(fn)
+    print('saving') 
+    local temp_dir = world.agent.dir:clone()
+    world.agent:stop()
+    torch.save(fn,world)
+    world.agent.dir = temp_dir
+end
+local function load_world(fn)
+    print('loading')
+    world = torch.load(fn)
+    local x,y = world.x,world.y
+    load_tilemap(world.region[x][y].tile)
+    col_objs = world.region[x][y].objects
+    camera = world.agent.camera
 end
 local function update_world_map()
     for i=1,world.w do
@@ -281,12 +301,12 @@ local function initialize()
         bg_w = w
         bg_h = h
         --human agent
-        agent = Agent(width / 2 - bg_w / 2,
+        world.agent = Agent(width / 2 - bg_w / 2,
                    height / 2 - bg_h / 2,
                    tile_size,
                    'agent',
                    {x=16*0+2,y=16*0+3,h=16,w=16},cam_width,cam_height)
-        camera = agent.camera
+        camera = world.agent.camera
     end
     if has_bot then
         bot.surf = bot.win_surf or SDL.createRGBSurface(bot.w,bot.h) 
@@ -296,12 +316,12 @@ local function initialize()
         local f, a, w, h = bot.bg:query()
         bg_w = w
         bg_h = h
-        pokemon = Bot(width / 2 - bg_w / 2,
+        world.pokemon = Bot(width / 2 - bg_w / 2,
                    height / 2 - bg_h / 2,
                    tile_size,
                    'agent',
                    {x=16*4+2,y=16*14+3,h=16,w=16},cam_width,cam_height)
-        pokemon.record = not has_human
+        world.pokemon.record = not has_human
     end
 
 
@@ -369,7 +389,7 @@ while running do
 			--print(string.format("key down: %d -> %s", e.keysym.sym, SDL.getKeyName(e.keysym.sym)))
             local key_name = SDL.getKeyName(e.keysym.sym)
             if  key_name == 'Space' and not pressed[e.keysym.sym] then
-                local rem_r,rem_c = get_tile_ind(agent.pos)
+                local rem_r,rem_c = get_tile_ind(world.agent.pos)
                 grow_time[rem_r][rem_c] = 0
                 --if plain dirt, wall
                 if tile_list[rem_r][rem_c] == 1 then
@@ -378,16 +398,16 @@ while running do
                     change_tile(1,rem_r,rem_c)
                 end
             elseif key_name == 'P'and not pressed[e.keysym.sym] then
-                local rem_r,rem_c = get_tile_ind(agent.pos)
+                local rem_r,rem_c = get_tile_ind(world.agent.pos)
                 change_tile(4,rem_r,rem_c)
             elseif key_name == 'W'and not pressed[e.keysym.sym] then
-                agent.dir[2] = agent.dir[2] -1
+                world.agent.dir[2] = world.agent.dir[2] -1
             elseif key_name == 'A'and not pressed[e.keysym.sym] then
-                agent.dir[1] = agent.dir[1] -1
+                world.agent.dir[1] = world.agent.dir[1] -1
             elseif key_name == 'S' and not pressed[e.keysym.sym] then
-                agent.dir[2] = agent.dir[2] + 1
+                world.agent.dir[2] = world.agent.dir[2] + 1
             elseif key_name == 'D' and not pressed[e.keysym.sym] then
-                agent.dir[1] = agent.dir[1] + 1
+                world.agent.dir[1] = world.agent.dir[1] + 1
             elseif key_name == 'Escape' and not pressed[e.keysym.sym] then
                 running = false
             elseif key_name == 'Left' and not pressed[e.keysym.sym] then
@@ -402,18 +422,24 @@ while running do
                 pic = get_pixels(bot)
                 gnuplot.imagesc(pic)
                 gnuplot.plotflush()
+            elseif key_name == '[' and not pressed[e.keysym.sym] then
+                print('saving')
+                save_world('foo')
+            elseif key_name == ']' and not pressed[e.keysym.sym] then
+                print('loading')
+                load_world('foo')
             end
             pressed[e.keysym.sym] = true
         elseif e.type == SDL.event.KeyUp then
             local key_name = SDL.getKeyName(e.keysym.sym)
             if key_name == 'W' then
-                agent.dir[2] = agent.dir[2] +1
+                world.agent.dir[2] = world.agent.dir[2] +1
             elseif key_name == 'A' then
-                agent.dir[1] = agent.dir[1] +1
+                world.agent.dir[1] = world.agent.dir[1] +1
             elseif key_name == 'S' then
-                agent.dir[2] = agent.dir[2] - 1
+                world.agent.dir[2] = world.agent.dir[2] - 1
             elseif key_name == 'D'  then
-                agent.dir[1] = agent.dir[1] - 1
+                world.agent.dir[1] = world.agent.dir[1] - 1
             end
             pressed[e.keysym.sym] = false
 		end
@@ -489,34 +515,34 @@ while running do
         --boundary collisions
         local hit = obj:handle_bounds(width,height)
         --region change on boundary hits
-        if obj == agent and hit:ne(0):any() then 
+        if obj == world.agent and hit:ne(0):any() then 
             if hit[1] == -1 then
                 world.x = world.x+hit[1]
                 if world.x < 1 then
                     world.x = 1
                 else
-                    agent:set_position(width-agent.pos.w*2,agent.pos.y)
+                    world.agent:set_position(width-world.agent.pos.w*2,world.agent.pos.y)
                 end
             elseif hit[1] == 1 then
                 world.x = world.x+hit[1]
                 if world.x > world.w then
                     world.x = world.w
                 else
-                    agent:set_position(agent.pos.w*2,agent.pos.y)
+                    world.agent:set_position(world.agent.pos.w*2,world.agent.pos.y)
                 end
             elseif hit[2] == -1 then
                 world.y = world.y+hit[2]
                 if world.y < 1 then
                     world.y = 1
                 else
-                    agent:set_position(agent.pos.x,agent.pos.h*2)
+                    world.agent:set_position(world.agent.pos.x,world.agent.pos.h*2)
                 end
             elseif hit[2] == 1 then
                 world.y = world.y+hit[2]
                 if world.y > world.h then
                     world.y = world.h
                 else
-                    agent:set_position(agent.pos.x,height-agent.pos.h*2)
+                    world.agent:set_position(world.agent.pos.x,height-world.agent.pos.h*2)
                 end
             end
 

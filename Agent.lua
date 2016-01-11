@@ -3,13 +3,21 @@ local Agent,parent = torch.class('Agent','Being')
 
 function Agent:__init(x,y,tile_size,sheet,sheet_pos,cam_width,cam_height)
     parent.__init(self,x,y,tile_size,sheet,sheet_pos)
+    print(tile_size[1]*3/4)
+    self.pos.w = tile_size[1]*3/4
+    self.pos.h = tile_size[2]*3/4
     self.max_hp = 10
+    self.speed = 100
     self.camera = {x=x,y=y,w=cam_width,h=cam_height}
     self:reset(x,y)
     --TODO: decouple direction and speed: self.speed
 end
 function Agent:reset(x,y)
     parent.reset(self,x,y)
+end
+--cease movement and actions (used before serializing object(
+function Agent:stop()
+    self.dir:zero()
 end
 
 --used for normal movement. camera slowly tracking player

@@ -4,7 +4,11 @@ function Object:__init(x,y,tile_size,sheet,sheet_pos)
     self.pos = {}
     self.pos.w = tile_size[1]
     self.pos.h = tile_size[2]
+    self.disp = {}
+    self.disp.w = tile_size[1]
+    self.disp.h = tile_size[2]
     self.contact_damage = 0
+    self.speed = 200 --pixels per second
     self.sheet = sheet
     self.sheet_pos = sheet_pos
     self.dir = torch.zeros(2)
@@ -12,7 +16,6 @@ end
 
 function Object:reset(x,y)
     self:set_position(x,y)
-    self.speed = 200
 end
 function Object:set_position(x,y)
     self.pos.x = x
@@ -20,8 +23,10 @@ function Object:set_position(x,y)
 end
 
 function Object:handle_col(oo)
-    self.pos.x = 2*self.pos.x - oo.pos.x
-    self.pos.y = 2*self.pos.y - oo.pos.y
+    local x_bounce = self.speed/2e2
+    local y_bounce = self.speed/2e2
+    self.pos.x = self.pos.x + (self.pos.x - oo.pos.x)*x_bounce
+    self.pos.y = self.pos.y + (self.pos.y - oo.pos.y)*y_bounce
 end
 
 --prevents leaving the local map
@@ -58,8 +63,8 @@ end
 function Object:render(graphics,camera)
     local temp = {x=(self.pos.x-camera.x)*graphics.scale,
                 y=(self.pos.y-camera.y)*graphics.scale,
-                w=(self.pos.w)*graphics.scale,
-                h=(self.pos.h)*graphics.scale}
+                w=(self.disp.w)*graphics.scale,
+                h=(self.disp.h)*graphics.scale}
     graphics.rdr:copy(graphics[self.sheet],self.sheet_pos, temp)
 end
     
