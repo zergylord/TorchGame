@@ -2,6 +2,7 @@ local Object = torch.class('Object')
 
 function Object:__init(x,y,tile_size,sheet,sheet_pos)
     self.pos = {}
+    self.flip = 0
     self.pos.w = tile_size[1]
     self.pos.h = tile_size[2]
     self.disp = {}
@@ -54,10 +55,14 @@ end
 --]]
 function Object:handle_movement(dt)
     local normalize = (self.dir[1]^2 + self.dir[2]^2)^.5
+    local xdiff,ydiff = 0,0
     if normalize > 0 then
-    self.pos.x = self.pos.x + (self.dir[1]*self.speed*dt)/normalize
-    self.pos.y = self.pos.y + (self.dir[2]*self.speed*dt)/normalize
+        xdiff = (self.dir[1]*self.speed*dt)/normalize
+        ydiff = (self.dir[2]*self.speed*dt)/normalize
+        self.pos.x = self.pos.x + xdiff 
+        self.pos.y = self.pos.y + ydiff 
     end
+    return xdiff,ydiff
 end
 
 function Object:render(graphics,camera)
@@ -65,6 +70,10 @@ function Object:render(graphics,camera)
                 y=(self.pos.y-camera.y)*graphics.scale,
                 w=(self.disp.w)*graphics.scale,
                 h=(self.disp.h)*graphics.scale}
-    graphics.rdr:copy(graphics[self.sheet],self.sheet_pos, temp)
+    --graphics.rdr:copy(graphics[self.sheet],self.sheet_pos, temp)
+    graphics.rdr:copyEx(
+                {texture = graphics[self.sheet],
+                source = self.sheet_pos, 
+                destination = temp,nil,nil,flip = self.flip})
 end
     

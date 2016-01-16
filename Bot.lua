@@ -5,6 +5,7 @@ local Bot,parent = torch.class('Bot','Agent')
 function Bot:__init(x,y,tile_size,sheet,sheet_pos,cam_width,cam_height)
     parent.__init(self,x,y,tile_size,sheet,sheet_pos,cam_width,cam_height)
     self.step = 0
+    self.total_step = 0
     self.record = false
 end
 num_frames = 1e2
@@ -19,9 +20,12 @@ function Bot:forward(pic)
     if self.record then
         actions[self.step]:copy(self.dir)
         frames[self.step]:copy(pic)
-        if self.step > num_frames then
-            torch.save('video.t7',{frames,actions})
-            os.exit()
+        if self.step >= num_frames then
+            self.total_step = self.total_step + self.step
+            if self.record then
+                torch.save('data/video' .. self.total_step .. '.t7' ,{frames,actions})
+            end
+            self.step = 0
         end
     end
 end

@@ -136,7 +136,10 @@ local function initialize()
                    height / 2 - bg_h / 2,
                    tile_size,
                    'agent',
-                   {x=16*0+2,y=16*0+3,h=16,w=16},cam_width,cam_height)
+                   {{x=16*0+2,y=16*0+3,h=16,w=16},
+                    {x=16*1+2,y=16*0+3,h=16,w=16},
+                    {x=16*2+2,y=16*0+3,h=16,w=16}},
+                   cam_width,cam_height)
         camera = world.agent.camera
     end
     if has_bot then
@@ -151,7 +154,10 @@ local function initialize()
                    height / 2 - bg_h / 2,
                    tile_size,
                    'agent',
-                   {x=16*4+2,y=16*14+3,h=16,w=16},cam_width,cam_height)
+                   {{x=16*4+2,y=16*14+3,h=16,w=16},
+                   {x=16*5+2,y=16*14+3,h=16,w=16},
+                   {x=16*6+2,y=16*14+3,h=16,w=16}},
+                   cam_width,cam_height)
         world.pokemon.record = not has_human
     end
 
@@ -219,6 +225,7 @@ while running do
 		elseif e.type == SDL.event.KeyDown then
 			--print(string.format("key down: %d -> %s", e.keysym.sym, SDL.getKeyName(e.keysym.sym)))
             local key_name = SDL.getKeyName(e.keysym.sym)
+            --TODO:encapsulate ability in agent subclass
             if  key_name == 'Space' and not pressed[e.keysym.sym] then
                 local rem_r,rem_c = get_tile_ind(world.agent.pos)
                 grow_time[rem_r][rem_c] = 0
@@ -228,9 +235,22 @@ while running do
                 else --back to dirt
                     change_tile(1,rem_r,rem_c)
                 end
-            elseif key_name == 'P'and not pressed[e.keysym.sym] then
+            elseif key_name == 'P' and not pressed[e.keysym.sym] then
                 local rem_r,rem_c = get_tile_ind(world.agent.pos)
                 change_tile(4,rem_r,rem_c)
+            elseif key_name == 'L' and not pressed[e.keysym.sym] then
+                local rem_r,rem_c = get_tile_ind(world.agent.pos)
+                local off_r,off_c = 0,0
+                if world.agent.heading == 1 then
+                    off_c = 1
+                elseif world.agent.heading == 2 then
+                    off_c = -1
+                elseif world.agent.heading == 3 then
+                    off_r = -1
+                elseif world.agent.heading == 4 then
+                    off_r = 1
+                end
+                change_tile(1,math.min(num_tiles[1],rem_r+off_r),rem_c+off_c)
             elseif key_name == 'W'and not pressed[e.keysym.sym] then
                 world.agent.dir[2] = world.agent.dir[2] -1
             elseif key_name == 'A'and not pressed[e.keysym.sym] then

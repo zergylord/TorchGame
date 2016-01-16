@@ -152,7 +152,9 @@ function change_region(x,y)
     end
     load_tilemap(world.region[x][y].tile)
     col_objs = world.region[x][y].objects
-    update_world_map()
+    if has_human then
+        update_world_map()
+    end
 end
 
 function get_tile_ind(rect)

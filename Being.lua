@@ -17,12 +17,13 @@ function Being:handle_col(oo)
     self.hp = math.min(self.max_hp,self.hp - oo.contact_damage)
 end
 function Being:handle_movement(dt)
-    parent.handle_movement(self,dt)
+    local xdiff,ydiff = parent.handle_movement(self,dt)
     --TODO:seperate logic function
     self.hp = self.hp - self.decay*dt
     if self.hp < 0 then
         self.dead = true
     end
+    return xdiff,ydiff
 end
 local hp_bar_height = 5
 function Being:render(graphics,camera)
@@ -30,7 +31,7 @@ function Being:render(graphics,camera)
     if self.hp_bar then
         local temp = {x=(self.pos.x-camera.x)*graphics.scale,
                     y=(self.pos.y-hp_bar_height-5-camera.y)*graphics.scale,
-                    w=(self.hp/self.max_hp)*self.pos.w*graphics.scale,
+                    w=(self.hp/self.max_hp)*self.disp.w*graphics.scale,
                     h=(hp_bar_height)*graphics.scale}
         graphics.rdr:fillRect(temp)
     end
