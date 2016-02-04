@@ -36,3 +36,7 @@ function Being:render(graphics,camera)
         graphics.rdr:fillRect(temp)
     end
 end
+function Being:handle_death()
+    self:reset(torch.random(height),torch.random(width))
+    return false
+end

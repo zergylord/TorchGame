@@ -23,6 +23,7 @@ function Agent:stop()
 end
 
 --used for normal movement. camera slowly tracking player
+--YOU MUST OVERIDE THIS, should return new objs, not diffs
 function Agent:handle_movement(dt)
     local xdiff,ydiff = parent.handle_movement(self,dt)
     if xdiff ~= 0 or ydiff ~= 0 then

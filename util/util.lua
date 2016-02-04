@@ -4,7 +4,6 @@ function get_pixels(graphics)
     pic = torch.zeros(h,w)
     for r=1,h do
         for c=1,w do
-            --print(r,c)
             pic[r][c] = string.byte(bytes,(r-1)*w*4+(c-1)*4+1)
         end   
     end
@@ -106,9 +105,11 @@ function generate_region()
     table.insert(region.objects,world.agent)
     --table.insert(region.objects,pokemon)
     for b=1,num_balls do
-        local ball = Ball(torch.random(height),torch.random(width),tile_size,'agent',{x=16*7+2,y=16*15+3,h=16,w=16})
+        local ball = Mob(torch.random(height),torch.random(width),tile_size,'agent',{x=16*7+2,y=16*15+3,h=16,w=16},world.agent)
         table.insert(region.objects,ball)
     end
+    --local new_bullet = Bullet(torch.random(height),torch.random(width),tile_size,torch.rand(2))
+    --table.insert(region.objects,new_bullet)
     return region
 end
 function save_world(fn)

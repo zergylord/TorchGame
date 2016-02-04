@@ -3,6 +3,10 @@ require 'Object'
 require 'Being'
 require 'Ball'
 require 'Bot'
+require 'Mob'
+require 'Bullet'
+require 'Human'
+require 'HeatSeeker'
 SDL	= require "SDL"
 image	= require "SDL.image"
 require 'Agent'
@@ -13,7 +17,7 @@ require 'util.util'
 has_human = true
 has_bot = true
 has_minimap = true
-num_balls = 10
+num_balls = 5
 
 
 local running	= true
@@ -21,6 +25,7 @@ disp = { }
 width	=  1920
 height	= 1080
 cam_width,cam_height = 336,336
+--TODO: support arbitary num of tiles per region
 num_tiles = {80,45}
 tile_size = {width/num_tiles[1],height/num_tiles[2]}
 obj_size = {tile_size[1]/2,tile_size[2]/2}
@@ -132,14 +137,9 @@ local function initialize()
         bg_w = w
         bg_h = h
         --human agent
-        world.agent = Agent(width / 2 - bg_w / 2,
+        world.agent = Human(width / 2 - bg_w / 2,
                    height / 2 - bg_h / 2,
-                   tile_size,
-                   'agent',
-                   {{x=16*0+2,y=16*0+3,h=16,w=16},
-                    {x=16*1+2,y=16*0+3,h=16,w=16},
-                    {x=16*2+2,y=16*0+3,h=16,w=16}},
-                   cam_width,cam_height)
+                   tile_size,cam_width,cam_height)
         camera = world.agent.camera
     end
     if has_bot then
@@ -214,10 +214,6 @@ end
 initialize()
 local pressed = {}
 while running do
-    --[[
-    local my_r,my_c = get_tile_ind(agent.pos)
-    print(my_r,my_c)
-    --]]
     frame_timer:reset()
 	for e in SDL.pollEvent() do
 		if e.type == SDL.event.Quit then
@@ -227,30 +223,13 @@ while running do
             local key_name = SDL.getKeyName(e.keysym.sym)
             --TODO:encapsulate ability in agent subclass
             if  key_name == 'Space' and not pressed[e.keysym.sym] then
-                local rem_r,rem_c = get_tile_ind(world.agent.pos)
-                grow_time[rem_r][rem_c] = 0
-                --if plain dirt, wall
-                if tile_list[rem_r][rem_c] == 1 then
-                    change_tile(2,rem_r,rem_c)
-                else --back to dirt
-                    change_tile(1,rem_r,rem_c)
-                end
+                world.agent:build_wall()
             elseif key_name == 'P' and not pressed[e.keysym.sym] then
-                local rem_r,rem_c = get_tile_ind(world.agent.pos)
-                change_tile(4,rem_r,rem_c)
+                world.agent:plant_grass()
             elseif key_name == 'L' and not pressed[e.keysym.sym] then
-                local rem_r,rem_c = get_tile_ind(world.agent.pos)
-                local off_r,off_c = 0,0
-                if world.agent.heading == 1 then
-                    off_c = 1
-                elseif world.agent.heading == 2 then
-                    off_c = -1
-                elseif world.agent.heading == 3 then
-                    off_r = -1
-                elseif world.agent.heading == 4 then
-                    off_r = 1
-                end
-                change_tile(1,math.min(num_tiles[1],rem_r+off_r),rem_c+off_c)
+                world.agent:remove_tile()
+            elseif key_name == 'O' and not pressed[e.keysym.sym] then
+                table.insert(col_objs,world.agent:shoot())
             elseif key_name == 'W'and not pressed[e.keysym.sym] then
                 world.agent.dir[2] = world.agent.dir[2] -1
             elseif key_name == 'A'and not pressed[e.keysym.sym] then
@@ -295,11 +274,6 @@ while running do
             pressed[e.keysym.sym] = false
 		end
 	end
-    --render-------------------------------
-    --TODO:build up a big surface and then render that
-    -- dirty flags, etc
-
-    --
     if has_bot then
         if bot.timer:time().real > (1/fps)*2 then
             bot.timer:reset()
@@ -337,20 +311,28 @@ while running do
     end
     --]]
     --handle collisions----------------------------------- 
-    local kill = {}
-    for _,obj in pairs(col_objs) do
+    local kill_obj = {}
+    local kill_tile = {}
+    local birth_obj = {}
+    for ko,obj in pairs(col_objs) do
         if obj.dead then
-            obj:reset(torch.random(height),torch.random(width))
+            if obj:handle_death() then
+                table.insert(kill_obj,ko)
+            end
+            --obj:reset(torch.random(height),torch.random(width))
         end
         --movement 
-        obj:handle_movement(dt)
+        local new_obj = obj:handle_movement(dt)
+        if new_obj then
+            table.insert(birth_obj,new_obj)
+        end
         --static/dynamic collisions
         --TODO:unify tiles
         for k,tile in pairs(col_tiles) do
             if collide(tile.rect,obj.pos) then
                 obj:handle_col({pos = tile.rect,contact_damage = tile.contact_damage})
                 if tile.killable then
-                    table.insert(kill,k)
+                    table.insert(kill_tile,k)
                     change_tile(1,tile.ind[1],tile.ind[2])
                 end
             end
@@ -401,8 +383,14 @@ while running do
         end
     end
     --remove dead tiles
-    for i = 1,#kill do
-        table.remove(col_tiles,kill[i])
+    for i = 1,#kill_tile do
+        table.remove(col_tiles,kill_tile[i])
+    end
+    for i = 1,#kill_obj do
+        table.remove(col_objs,kill_obj[i])
+    end
+    for _,o in pairs(birth_obj) do
+        table.insert(col_objs,o)
     end
     --heal tile logic----------------
     local grow_mask = grow_time:gt(0)

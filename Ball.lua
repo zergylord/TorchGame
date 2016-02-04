@@ -30,3 +30,7 @@ function Ball:handle_bounds(width,height)
         self.dir[2] = 1
     end
 end
+function Ball:handle_death()
+    --parent.handle_death(self)
+    return true
+end
